@@ -3,6 +3,7 @@ import logging
 from time import time
 from collections import deque, namedtuple
 
+_LOGGER = logging.getLogger(__name__)
 
 # Based on Arduino PID Library
 # See https://github.com/br3ttb/Arduino-PID-Library
@@ -80,10 +81,10 @@ class PIDArduino(object):
         self._last_output = max(self._last_output, self._out_min)
 
         # Log some debug info
-        self._logger.debug('P: {0}'.format(p))
-        self._logger.debug('I: {0}'.format(i))
-        self._logger.debug('D: {0}'.format(d))
-        self._logger.debug('output: {0}'.format(self._last_output))
+        _LOGGER.debug('P: {0}'.format(p))
+        _LOGGER.debug('I: {0}'.format(i))
+        _LOGGER.debug('D: {0}'.format(d))
+        _LOGGER.debug('output: {0}'.format(self._last_output))
 
         # Remember some variables for next time
         self._last_input = input_val
@@ -213,13 +214,13 @@ class PIDAutotune(object):
         if (self._state == PIDAutotune.STATE_RELAY_STEP_UP
                 and input_val > self._setpoint + self._noiseband):
             self._state = PIDAutotune.STATE_RELAY_STEP_DOWN
-            self._logger.debug('switched state: {0}'.format(self._state))
-            self._logger.debug('input: {0}'.format(input_val))
+            _LOGGER.debug('switched state: {0}'.format(self._state))
+            _LOGGER.debug('input: {0}'.format(input_val))
         elif (self._state == PIDAutotune.STATE_RELAY_STEP_DOWN
                 and input_val < self._setpoint - self._noiseband):
             self._state = PIDAutotune.STATE_RELAY_STEP_UP
-            self._logger.debug('switched state: {0}'.format(self._state))
-            self._logger.debug('input: {0}'.format(input_val))
+            _LOGGER.debug('switched state: {0}'.format(self._state))
+            _LOGGER.debug('input: {0}'.format(input_val))
 
         # set output
         if (self._state == PIDAutotune.STATE_RELAY_STEP_UP):
@@ -265,8 +266,8 @@ class PIDAutotune(object):
             self._peak_count += 1
             self._peaks.append(input_val)
             self._peak_timestamps.append(now)
-            self._logger.debug('found peak: {0}'.format(input_val))
-            self._logger.debug('peak count: {0}'.format(self._peak_count))
+            _LOGGER.debug('found peak: {0}'.format(input_val))
+            _LOGGER.debug('peak count: {0}'.format(self._peak_count))
 
         # check for convergence of induced oscillation
         # convergence of amplitude assessed on last 4 peaks (1.5 cycles)
@@ -286,8 +287,8 @@ class PIDAutotune(object):
             amplitude_dev = ((0.5 * (abs_max - abs_min) - self._induced_amplitude)
                              / self._induced_amplitude)
 
-            self._logger.debug('amplitude: {0}'.format(self._induced_amplitude))
-            self._logger.debug('amplitude deviation: {0}'.format(amplitude_dev))
+            _LOGGER.debug('amplitude: {0}'.format(self._induced_amplitude))
+            _LOGGER.debug('amplitude deviation: {0}'.format(amplitude_dev))
 
             if amplitude_dev < PIDAutotune.PEAK_AMPLITUDE_TOLERANCE:
                 self._state = PIDAutotune.STATE_SUCCEEDED
