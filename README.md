@@ -1,7 +1,6 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
 # custom_components/smart_thermostat
-missing feature test repository
 
 ## PID controller thermostat
 
@@ -94,3 +93,9 @@ The python PID module:
 
 PID controller explained. Would recommoned to read some of it:
 [https://controlguru.com/table-of-contents/](https://controlguru.com/table-of-contents/)
+
+PID controller and Ziegler-Nichols method:
+[https://electronics.stackexchange.com/questions/118174/pid-controller-and-ziegler-nichols-method-how-to-get-oscillation-period](https://electronics.stackexchange.com/questions/118174/pid-controller-and-ziegler-nichols-method-how-to-get-oscillation-period)
+
+Ziegler–Nichols Tuning:
+[https://www.allaboutcircuits.com/projects/embedded-pid-temperature-control-part-6-zieglernichols-tuning/](https://www.allaboutcircuits.com/projects/embedded-pid-temperature-control-part-6-zieglernichols-tuning/)
