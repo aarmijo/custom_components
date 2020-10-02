@@ -39,6 +39,8 @@ DEFAULT_KD = 0
 DEFAULT_AUTOTUNE = "none"
 DEFAULT_NOISEBAND = 0.5
 DEFAULT_HEAT_METER = "none"
+DEFAULT_AUTOTUNE_LOOKBACK = 60
+DEFAULT_AUTOTUNE_CONTROL_TYPE = "none"
 
 CONF_HEATER = 'heater'
 CONF_SENSOR = 'target_sensor'
@@ -61,6 +63,8 @@ CONF_PWM = 'pwm'
 CONF_AUTOTUNE = 'autotune'
 CONF_NOISEBAND = 'noiseband'
 CONF_HEAT_METER = 'heat_meter'
+CONF_AUTOTUNE_LOOKBACK = 'autotune_lookback'
+CONF_AUTOTUNE_CONTROL_TYPE = 'autotune_control_type'
 
 SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 
@@ -91,7 +95,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_PWM, default=DEFAULT_PWM): vol.Coerce(float),
     vol.Optional(CONF_AUTOTUNE, default=DEFAULT_AUTOTUNE): cv.string,
     vol.Optional(CONF_NOISEBAND, default=DEFAULT_NOISEBAND): vol.Coerce(float),
-    vol.Optional(CONF_HEAT_METER): cv.entity_id
+    vol.Optional(CONF_HEAT_METER, default=DEFAULT_HEAT_METER): cv.entity_id,
+    vol.Optional(CONF_AUTOTUNE_LOOKBACK, default=DEFAULT_AUTOTUNE_LOOKBACK): vol.Coerce(float),
+    vol.Optional(CONF_AUTOTUNE_CONTROL_TYPE, default=DEFAULT_AUTOTUNE_CONTROL_TYPE): cv.string
 })
 
 
@@ -121,13 +127,16 @@ async def async_setup_platform(hass, config, async_add_entities,
     autotune = config.get(CONF_AUTOTUNE)
     noiseband = config.get(CONF_NOISEBAND)
     heat_meter_entity_id = config.get(CONF_HEAT_METER)
+    autotune_lookback = config.get(CONF_AUTOTUNE_LOOKBACK)
+    autotune_control_type = config.get(CONF_AUTOTUNE_CONTROL_TYPE)
 
     async_add_entities([SmartThermostat(
         name, heater_entity_id, sensor_entity_id, min_temp, max_temp,
         target_temp, ac_mode, min_cycle_duration, cold_tolerance,
         hot_tolerance, keep_alive, initial_hvac_mode, away_temp,
         precision, unit, difference, kp, ki, kd, pwm, autotune, 
-        noiseband, heat_meter_entity_id)])
+        noiseband, heat_meter_entity_id, autotune_lookback,
+        autotune_control_type)])
 
 class SmartThermostat(ClimateEntity, RestoreEntity):
     """Representation of a Smart Thermostat device."""
@@ -137,7 +146,8 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
                  cold_tolerance, hot_tolerance, keep_alive,
                  initial_hvac_mode, away_temp, precision, unit,
                  difference, kp, ki, kd, pwm, autotune, 
-                 noiseband, heat_meter_entity_id):
+                 noiseband, heat_meter_entity_id, autotune_lookback,
+                 autotune_control_type):
         """Initialize the thermostat."""
         self._name = name
         self.heater_entity_id = heater_entity_id
@@ -178,16 +188,18 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
         self.autotune = autotune
         self.sensor_entity_id = sensor_entity_id
         self.time_changed = time.time()
+        self.autotune_lookback = autotune_lookback
         if self.autotune != "none":
             self.pidAutotune = pid_controller.PIDAutotune(self._target_temp, self.difference,
-            self._keep_alive.seconds, self._keep_alive.seconds*147, self.minOut, self.maxOut,
+            self._keep_alive.seconds, self.autotune_lookback, self.minOut, self.maxOut,
             noiseband, time.time)
-            _LOGGER.warning("Autotune will run with the next Setpoint Value you set."
-            "changes, submited after doesn't have any effect until it's finished.")
+            _LOGGER.warning("Autotune will run with the current Setpoint Value you set. "
+            "Changes, submited after, doesn't have any effect until it's finished.")
         else:
             self.pidController = pid_controller.PIDArduino(self._keep_alive.seconds,
             self.kp, self.ki, self.kd, self.minOut, self.maxOut, time.time)
-        self.heat_meter_entity_id = heat_meter_entity_id
+        self.heat_meter_entity_id = heat_meter_entity_id        
+        self.autotune_control_type = autotune_control_type
 
     async def async_added_to_hass(self):
         """Run when entity about to be added."""
@@ -486,7 +498,10 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
         """calculate control output and handle autotune"""
         if self.autotune != "none" :
             if self.pidAutotune.run(self._cur_temp):
-                params = self.pidAutotune.get_pid_parameters(self.autotune)
+                if self.autotune_control_type == 'none':
+                    params = self.pidAutotune.get_pid_parameters(self.autotune, True)
+                else:
+                    params = self.pidAutotune.get_pid_parameters(self.autotune, False, self.autotune_control_type)
                 self.kp = params.Kp
                 self.ki = params.Ki
                 self.kd = params.Kd
