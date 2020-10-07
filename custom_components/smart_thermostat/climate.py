@@ -41,6 +41,7 @@ DEFAULT_NOISEBAND = 0.5
 DEFAULT_HEAT_METER = "none"
 DEFAULT_AUTOTUNE_LOOKBACK = 60
 DEFAULT_AUTOTUNE_CONTROL_TYPE = "none"
+DEFAULT_PWM_CYCLE_TYPE = 'variable'
 
 CONF_HEATER = 'heater'
 CONF_SENSOR = 'target_sensor'
@@ -65,6 +66,7 @@ CONF_NOISEBAND = 'noiseband'
 CONF_HEAT_METER = 'heat_meter'
 CONF_AUTOTUNE_LOOKBACK = 'autotune_lookback'
 CONF_AUTOTUNE_CONTROL_TYPE = 'autotune_control_type'
+CONF_PWM_CYCLE_TYPE = 'pwm_cycle_type'
 
 SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 
@@ -97,7 +99,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_NOISEBAND, default=DEFAULT_NOISEBAND): vol.Coerce(float),
     vol.Optional(CONF_HEAT_METER, default=DEFAULT_HEAT_METER): cv.entity_id,
     vol.Optional(CONF_AUTOTUNE_LOOKBACK, default=DEFAULT_AUTOTUNE_LOOKBACK): vol.Coerce(float),
-    vol.Optional(CONF_AUTOTUNE_CONTROL_TYPE, default=DEFAULT_AUTOTUNE_CONTROL_TYPE): cv.string
+    vol.Optional(CONF_AUTOTUNE_CONTROL_TYPE, default=DEFAULT_AUTOTUNE_CONTROL_TYPE): cv.string,
+    vol.Optional(CONF_PWM_CYCLE_TYPE, default=DEFAULT_PWM_CYCLE_TYPE): cv.string
 })
 
 
@@ -129,6 +132,7 @@ async def async_setup_platform(hass, config, async_add_entities,
     heat_meter_entity_id = config.get(CONF_HEAT_METER)
     autotune_lookback = config.get(CONF_AUTOTUNE_LOOKBACK)
     autotune_control_type = config.get(CONF_AUTOTUNE_CONTROL_TYPE)
+    pwm_cycle_type = config.get(CONF_PWM_CYCLE_TYPE)
 
     async_add_entities([SmartThermostat(
         name, heater_entity_id, sensor_entity_id, min_temp, max_temp,
@@ -136,7 +140,7 @@ async def async_setup_platform(hass, config, async_add_entities,
         hot_tolerance, keep_alive, initial_hvac_mode, away_temp,
         precision, unit, difference, kp, ki, kd, pwm, autotune, 
         noiseband, heat_meter_entity_id, autotune_lookback,
-        autotune_control_type)])
+        autotune_control_type, pwm_cycle_type)])
 
 class SmartThermostat(ClimateEntity, RestoreEntity):
     """Representation of a Smart Thermostat device."""
@@ -147,7 +151,7 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
                  initial_hvac_mode, away_temp, precision, unit,
                  difference, kp, ki, kd, pwm, autotune, 
                  noiseband, heat_meter_entity_id, autotune_lookback,
-                 autotune_control_type):
+                 autotune_control_type, pwm_cycle_type):
         """Initialize the thermostat."""
         self._name = name
         self.heater_entity_id = heater_entity_id
@@ -200,6 +204,8 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
             self.kp, self.ki, self.kd, self.minOut, self.maxOut, time.time)
         self.heat_meter_entity_id = heat_meter_entity_id        
         self.autotune_control_type = autotune_control_type
+        self.pwm_cycle_type = pwm_cycle_type
+        self.times_changed_in_pwm = 0
 
     async def async_added_to_hass(self):
         """Run when entity about to be added."""
@@ -301,11 +307,14 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
         if self._hvac_mode == HVAC_MODE_OFF:
             if self.heat_meter_entity_id != 'none':                
                 meter_attributes = {
-                    'friendly_name': 'Potencia media calefacción',
+                    'friendly_name': 'Potencia media termostato PID',
                     'icon': 'mdi:radiator',
-                    'unit_of_measurement': '%'
+                    'unit_of_measurement': 'pu'
                 }
-                self.hass.states.async_set(self.heat_meter_entity_id, 0, meter_attributes)            
+                self.hass.states.async_set(self.heat_meter_entity_id, 0, meter_attributes)
+
+            self.times_changed_in_pwm = 0
+
             return CURRENT_HVAC_OFF
         if not self._is_device_active:
             return CURRENT_HVAC_IDLE
@@ -513,10 +522,24 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
                 self.autotune = "none"
             self.control_output = self.pidAutotune.output
         else:
-            self.control_output = self.pidController.calc(self._cur_temp,
-            self._target_temp)
+            if self.pwm_cycle_type == 'variable':
+                self.control_output = self.pidController.calc(self._cur_temp,
+                self._target_temp)
+
+            elif self.pwm_cycle_type == 'fixed':
+                _LOGGER.info("Times changed in pwm: %s", self.times_changed_in_pwm)                
+                if self.times_changed_in_pwm == 0 or self.times_changed_in_pwm == 3:
+                    self.control_output = self.pidController.calc(self._cur_temp,
+                    self._target_temp)
+            
+                if self.times_changed_in_pwm == 3 and (self.control_output != 0 or self.control_output != 100):
+                    self.times_changed_in_pwm = 1
+            
+                if (self.control_output == 0 or self.control_output == 100) and self.times_changed_in_pwm != 0:
+                    self.times_changed_in_pwm = 0                
+
         _LOGGER.info("Obtained current control output: %s", self.control_output)
-        await self.set_controlvalue();
+        await self.set_controlvalue()
 
     async def set_controlvalue(self):
         """Set Outputvalue for heater"""
@@ -537,9 +560,9 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
                     self.time_changed = time.time()
             if self.heat_meter_entity_id != 'none':                
                 meter_attributes = {
-                    'friendly_name': 'Potencia media calefacción',
+                    'friendly_name': 'Potencia media termostato PID',
                     'icon': 'mdi:radiator',
-                    'unit_of_measurement': '%'
+                    'unit_of_measurement': 'pu'
                 }
                 self.hass.states.async_set(self.heat_meter_entity_id, round(self.control_output, 1), meter_attributes)            
         else:
@@ -553,6 +576,9 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
                 _LOGGER.info("\nTurning off AC %s", self.heater_entity_id)
                 await self._async_heater_turn_off()
                 self.time_changed = time.time()
+
+                if self.pwm_cycle_type == 'fixed':
+                    self.times_changed_in_pwm += 1
             else:
                 _LOGGER.info("Time until %s turns off: %s sec", self.heater_entity_id, time_on - time_passed)
         else:
@@ -560,5 +586,8 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
                 _LOGGER.info("\nTurning on AC %s", self.heater_entity_id)
                 await self._async_heater_turn_on()
                 self.time_changed = time.time()
+
+                if self.pwm_cycle_type == 'fixed':
+                    self.times_changed_in_pwm += 1
             else:
                 _LOGGER.info("Time until %s turns on: %s sec", self.heater_entity_id, time_off - time_passed)
