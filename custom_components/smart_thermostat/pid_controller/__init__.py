@@ -110,7 +110,7 @@ class PIDAutotune(object):
     """
     PIDParams = namedtuple('PIDParams', ['Kp', 'Ki', 'Kd'])
 
-    PEAK_AMPLITUDE_TOLERANCE = 0.05
+    PEAK_AMPLITUDE_TOLERANCE = 1.01
     STATE_OFF = 'off'
     STATE_RELAY_STEP_UP = 'relay step up'
     STATE_RELAY_STEP_DOWN = 'relay step down'
@@ -161,6 +161,10 @@ class PIDAutotune(object):
         self._induced_amplitude = 0
         self._Ku = 0
         self._Pu = 0
+        self._consolidating_max = 0
+        self._consolidating_min = 0
+        self._consolidating_max_timestamp = 0
+        self._consolidating_min_timestamp = 0
 
     @property
     def state(self):
@@ -334,14 +338,15 @@ class PIDAutotune(object):
         if (self._state == PIDAutotune.STATE_RELAY_STEP_UP
                 and input_val > self._setpoint + self._noiseband):
             self._state = PIDAutotune.STATE_RELAY_STEP_DOWN
+            self._inputs.clear()
             _LOGGER.debug('switched state: {0}'.format(self._state))
-            _LOGGER.debug('input: {0}'.format(input_val))
+            _LOGGER.debug('input: {0}'.format(input_val))            
         elif (self._state == PIDAutotune.STATE_RELAY_STEP_DOWN
                 and input_val < self._setpoint - self._noiseband):
             self._state = PIDAutotune.STATE_RELAY_STEP_UP
+            self._inputs.clear()
             _LOGGER.debug('switched state: {0}'.format(self._state))
             _LOGGER.debug('input: {0}'.format(input_val))
-
         # set output
         if (self._state == PIDAutotune.STATE_RELAY_STEP_UP):
             self._output = self._initial_output + self._outputstep
@@ -359,6 +364,13 @@ class PIDAutotune(object):
         for val in self._inputs:
             is_max = is_max and (input_val >= val)
             is_min = is_min and (input_val <= val)
+            
+        if is_max:            
+            self._consolidating_max = input_val
+            self._consolidating_max_timestamp = now
+        elif is_min:
+            self._consolidating_min = input_val
+            self._consolidating_min_timestamp = now
 
         self._inputs.append(input_val)
 
@@ -384,28 +396,41 @@ class PIDAutotune(object):
         # update peak times and values
         if inflection:
             self._peak_count += 1
-            self._peaks.append(input_val)
-            self._peak_timestamps.append(now)
-            _LOGGER.debug('found peak: {0}'.format(input_val))
+
+            consolidated_peak = 0
+            consolidated_timestamp = 0
+            if self._state == PIDAutotune.STATE_RELAY_STEP_DOWN:
+                consolidated_peak = self._consolidating_max
+                consolidated_timestamp = self._consolidating_max_timestamp
+            elif self._state == PIDAutotune.STATE_RELAY_STEP_UP:
+                consolidated_peak = self._consolidating_min
+                consolidated_timestamp = self._consolidating_min_timestamp
+
+            self._peaks.append(consolidated_peak)
+            self._peak_timestamps.append(consolidated_timestamp)
+            _LOGGER.debug('found peak: {0}'.format(consolidated_peak))
+            _LOGGER.debug('timestamp: {0}'.format(consolidated_timestamp))
             _LOGGER.debug('peak count: {0}'.format(self._peak_count))
+            self._consolidating_max = 0
+            self._consolidating_min = 0
+            self._consolidating_max_timestamp = 0
+            self._consolidating_min_timestamp = 0
 
         # check for convergence of induced oscillation
         # convergence of amplitude assessed on last 4 peaks (1.5 cycles)
         self._induced_amplitude = 0
 
         if inflection and (self._peak_count > 4):
-            abs_max = self._peaks[-2]
-            abs_min = self._peaks[-2]
             for i in range(0, len(self._peaks) - 2):
                 self._induced_amplitude += abs(self._peaks[i] - self._peaks[i+1])
-                abs_max = max(self._peaks[i], abs_max)
-                abs_min = min(self._peaks[i], abs_min)
 
-            self._induced_amplitude /= 6.0
+            self._induced_amplitude /= 3.0
+
+            abs_max = max(self._peaks[0], self._peaks[2])
+            abs_min = min(self._peaks[1], self._peaks[3])
 
             # check convergence criterion for amplitude of induced oscillation
-            amplitude_dev = ((0.5 * (abs_max - abs_min) - self._induced_amplitude)
-                             / self._induced_amplitude)
+            amplitude_dev = (abs_max - abs_min) / self._induced_amplitude
 
             _LOGGER.debug('amplitude: {0}'.format(self._induced_amplitude))
             _LOGGER.debug('amplitude deviation: {0}'.format(amplitude_dev))
@@ -424,7 +449,7 @@ class PIDAutotune(object):
             self._output = 0
 
             # calculate ultimate gain
-            self._Ku = 4.0 * self._outputstep / (self._induced_amplitude * math.pi)
+            self._Ku = 4.0 * self._outputstep / math.pi / math.sqrt(self._induced_amplitude ** 2 - self._noiseband ** 2) 
 
             # calculate ultimate period in seconds
             period1 = self._peak_timestamps[3] - self._peak_timestamps[1]
