@@ -110,7 +110,7 @@ class PIDAutotune(object):
     """
     PIDParams = namedtuple('PIDParams', ['Kp', 'Ki', 'Kd'])
 
-    PEAK_AMPLITUDE_TOLERANCE = 1.01
+    PEAK_AMPLITUDE_TOLERANCE = 1.03
     STATE_OFF = 'off'
     STATE_RELAY_STEP_UP = 'relay step up'
     STATE_RELAY_STEP_DOWN = 'relay step down'
@@ -426,8 +426,12 @@ class PIDAutotune(object):
 
             self._induced_amplitude /= 3.0
 
-            abs_max = max(self._peaks[0], self._peaks[2])
-            abs_min = min(self._peaks[1], self._peaks[3])
+            if (num % 2) != 0:
+                abs_max = max(self._peaks[0], self._peaks[2])
+                abs_min = min(self._peaks[1], self._peaks[3])
+            else:
+                abs_max = max(self._peaks[1], self._peaks[3])
+                abs_min = min(self._peaks[0], self._peaks[2])            
 
             # check convergence criterion for amplitude of induced oscillation
             amplitude_dev = (abs_max - abs_min) / self._induced_amplitude
