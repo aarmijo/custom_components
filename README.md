@@ -39,7 +39,6 @@ LOGGER.info("Set Kp, Ki, Kd. Smart thermostat now runs on PID Controller." self.
 * kd (Optional): Set PID parameter, d control value.
 * pwm (Optional): Set period time for pwm signal in seconds. If it's not set, pwm is disabled.
 * autotune (Optional): Choose a string for autotune settings.  If it's not set autotune is disabled.
-* pwm_cycle_type (Optional): Choose the pwm cycle logic. Set 'variable' (default value) if you want each pwm time on / off to be variable depending on control output. Set 'fixed' if you want each time on + off to be fixed.
 
 tuning_rules | Kp_divisor, Ki_divisor, Kd_divisor
 ------------ | -------------
@@ -86,7 +85,6 @@ climate:
     difference: 100
     noiseband: 0.5
     heat_meter: variable.mean_heating_value
-    pwm_cycle_type: "variable"
 ```
 ### Help
 
