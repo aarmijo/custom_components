@@ -426,7 +426,7 @@ class PIDAutotune(object):
 
             self._induced_amplitude /= 3.0
 
-            if (num % 2) != 0:
+            if (self._peak_count % 2) != 0:
                 abs_max = max(self._peaks[0], self._peaks[2])
                 abs_min = min(self._peaks[1], self._peaks[3])
             else:
